@@ -21,6 +21,8 @@ const ENotBeneficiary: vector<u8> = b"Only the beneficiary can claim.";
 const EUnlockTimeNotReached: vector<u8> = b"Unlock time has not been reached.";
 #[error]
 const EInsufficientFee: vector<u8> = b"Insufficient fee. Required: 1 SUI.";
+#[error]
+const EZeroAmount: vector<u8> = b"Amount to lock must be greater than zero.";
 
 // === Constants ===
 /// 1 SUI in MIST
@@ -56,6 +58,7 @@ public struct TokensClaimed has copy, drop {
     lock_id: vector<u8>,
     beneficiary: address,
     amount: u64,
+    remaining_balance: u64,
 }
 
 public struct PlatformFeeCollected has copy, drop {
@@ -75,6 +78,10 @@ public fun lock<T>(
     unlock_time: u64,
     ctx: &mut TxContext,
 ) {
+    // Fix #2: Reject zero-value locks
+    let amount = coins.balance().value();
+    assert!(amount > 0, EZeroAmount);
+
     assert!(unlock_time > clock.timestamp_ms(), EUnlockTimeNotReached);
 
     let mut fee_balance = fee_coins.into_balance();
@@ -92,8 +99,8 @@ public fun lock<T>(
     };
 
     let lock_id = object::new(ctx);
-    let amount = coins.balance().value();
 
+    // Emit events before sharing (Fix #6: event ordering)
     event::emit(TokensLocked {
         lock_id: object::uid_to_bytes(&lock_id),
         beneficiary,
@@ -132,10 +139,14 @@ public fun claim<T>(
     let amount = lock.balance.value();
     assert!(amount > 0, ENoTokensLocked);
 
+    // Fix #6: Split balance BEFORE emitting event with remaining balance
+    let remaining = lock.balance.value() - amount;
+
     event::emit(TokensClaimed {
         lock_id: object::uid_to_bytes(&lock.id),
         beneficiary: ctx.sender(),
         amount,
+        remaining_balance: remaining,
     });
 
     coin::from_balance(lock.balance.split(amount), ctx)

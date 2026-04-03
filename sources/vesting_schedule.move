@@ -21,6 +21,8 @@ const ENotBeneficiary: vector<u8> = b"Only the beneficiary can claim.";
 const EInvalidSchedule: vector<u8> = b"Cliff must be after now and before end time.";
 #[error]
 const EInsufficientFee: vector<u8> = b"Insufficient fee. Required: 1 SUI.";
+#[error]
+const EZeroAmount: vector<u8> = b"Amount to vest must be greater than zero.";
 
 // === Constants ===
 const PLATFORM_FEE: u64 = 1_000_000_000; // 1 SUI in MIST
@@ -77,6 +79,10 @@ public fun new<T>(
     end_time: u64,
     ctx: &mut TxContext,
 ) {
+    // Fix #2: Reject zero-value vesting
+    let total = coins.balance().value();
+    assert!(total > 0, EZeroAmount);
+
     assert!(cliff_time >= clock.timestamp_ms(), EInvalidSchedule);
     assert!(end_time > cliff_time, EInvalidSchedule);
 
@@ -95,7 +101,6 @@ public fun new<T>(
     };
 
     let wallet_id = object::new(ctx);
-    let total = coins.balance().value();
 
     event::emit(VestingScheduleCreated {
         wallet_id: object::uid_to_bytes(&wallet_id),
@@ -141,6 +146,7 @@ public fun claim<T>(
 
     wallet.claimed = wallet.claimed + claimable_amount;
 
+    // Fix #6: Emit event AFTER state update, with post-claim remaining balance
     event::emit(TokensVested {
         wallet_id: object::uid_to_bytes(&wallet.id),
         beneficiary: ctx.sender(),
@@ -207,15 +213,23 @@ public fun vested_total<T>(wallet: &VestingWallet<T>, clock: &Clock): u64 {
 }
 
 /// Remaining locked (not yet vested).
+/// Fix #4: Saturating subtraction to prevent underflow
 public fun locked<T>(wallet: &VestingWallet<T>, clock: &Clock): u64 {
-    wallet.total_amount - vested_total(wallet, clock)
+    let vested = vested_total(wallet, clock);
+    if (vested >= wallet.total_amount) {
+        0
+    } else {
+        wallet.total_amount - vested
+    }
 }
 
 /// Vesting progress in basis points (0–10000 = 0%–100%).
+/// Fix #5: Cast to u128 before multiplying to prevent overflow
 public fun vested_bps<T>(wallet: &VestingWallet<T>, clock: &Clock): u64 {
     let total = wallet.total_amount;
     if (total == 0) return 0;
-    (vested_total(wallet, clock) * 10000) / total
+    let vested = vested_total(wallet, clock);
+    ((vested as u128) * 10000 / (total as u128)) as u64
 }
 
 /// Milliseconds until cliff.
