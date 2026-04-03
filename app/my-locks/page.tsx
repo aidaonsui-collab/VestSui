@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from '@mysten/dapp-kit'
 import { Lock, TrendingUp, Clock, Coins, AlertCircle, Loader2, CheckCircle, ExternalLink } from 'lucide-react'
-import { Transaction } from '@mysten/sui/transactions'
+import { Transaction, Argument } from '@mysten/sui/transactions'
 import { SUI_CLOCK_OBJECT_ID } from '@mysten/sui/utils'
+import { fromB64 } from '@mysten/sui/utils'
 
 const VESTING_PKG = process.env.NEXT_PUBLIC_VESTING_PKG || '0x0'
 const RPC_URL = process.env.NEXT_PUBLIC_SUI_RPC || 'https://fullnode.mainnet.sui.io'
@@ -74,16 +75,23 @@ async function queryEvents(eventType: string, module: string) {
 }
 
 function extractCoinType(typeStr: string): string {
-  // e.g. "0x...::aida::AIDA" from "0xpkg::token_locker::TokenLock<0x...::aida::AIDA>"
   const match = typeStr.match(/<(.+)>$/)
   return match ? match[1] : '0x2::sui::SUI'
 }
 
+function safeParseNum(val: unknown): number {
+  if (typeof val === 'number') return val
+  if (typeof val === 'string') return parseInt(val, 10)
+  return 0
+}
+
 function formatDate(ms: number): string {
+  if (!ms || isNaN(ms)) return '—'
   return new Date(ms).toLocaleString()
 }
 
 function timeLeft(ms: number): string {
+  if (!ms || isNaN(ms)) return '—'
   const diff = ms - Date.now()
   if (diff <= 0) return 'Unlocked'
   const d = Math.floor(diff / 86400000)
@@ -95,6 +103,7 @@ function timeLeft(ms: number): string {
 
 function formatAmount(raw: string, decimals = 9): string {
   const val = parseInt(raw) / Math.pow(10, decimals)
+  if (isNaN(val)) return '—'
   if (val >= 1_000_000) return (val / 1_000_000).toFixed(2) + 'M'
   if (val >= 1_000) return (val / 1_000).toFixed(2) + 'K'
   return val.toFixed(2)
@@ -123,10 +132,8 @@ export default function MyLocksPage() {
     try {
       const lockEvents = await queryEvents('TokensLocked', 'token_locker')
       const vestingEvents = await queryEvents('VestingScheduleCreated', 'vesting_schedule')
-
       const results: LockInfo[] = []
 
-      // Process token locks
       for (const evt of lockEvents as Record<string, unknown>[]) {
         const fields = evt.parsedJson as Record<string, unknown> | undefined
         if (!fields) continue
@@ -134,25 +141,22 @@ export default function MyLocksPage() {
         if (beneficiary.toLowerCase() !== account.address.toLowerCase()) continue
 
         const evtId = evt.id as Record<string, unknown>
-        const txDigest = evtId.txDigest as string
-        const lockId = await getCreatedSharedObjectId(txDigest)
+        const lockId = await getCreatedSharedObjectId(evtId.txDigest as string)
         if (!lockId) continue
 
-        // Fetch the actual object to get the correct token type (phantom type)
         const tokenType = await getObjectType(lockId).then(extractCoinType)
 
         results.push({
           id: lockId,
           type: 'lock',
           tokenType,
-          balance: fields.amount as string,
+          balance: String(fields.amount ?? '0'),
           beneficiary,
-          unlockTime: fields.unlock_time as number,
+          unlockTime: safeParseNum(fields.unlock_time),
           creator: fields.creator as string,
         })
       }
 
-      // Process vesting wallets
       for (const evt of vestingEvents as Record<string, unknown>[]) {
         const fields = evt.parsedJson as Record<string, unknown> | undefined
         if (!fields) continue
@@ -160,8 +164,7 @@ export default function MyLocksPage() {
         if (beneficiary.toLowerCase() !== account.address.toLowerCase()) continue
 
         const evtId = evt.id as Record<string, unknown>
-        const txDigest = evtId.txDigest as string
-        const walletId = await getCreatedSharedObjectId(txDigest)
+        const walletId = await getCreatedSharedObjectId(evtId.txDigest as string)
         if (!walletId) continue
 
         const tokenType = await getObjectType(walletId).then(extractCoinType)
@@ -170,11 +173,11 @@ export default function MyLocksPage() {
           id: walletId,
           type: 'vesting',
           tokenType,
-          balance: fields.total_amount as string,
+          balance: String(fields.total_amount ?? '0'),
           beneficiary,
-          cliffTime: fields.cliff_time as number,
-          endTime: fields.end_time as number,
-          totalAmount: fields.total_amount as string,
+          cliffTime: safeParseNum(fields.cliff_time),
+          endTime: safeParseNum(fields.end_time),
+          totalAmount: String(fields.total_amount ?? '0'),
           creator: fields.creator as string,
         })
       }
@@ -189,22 +192,21 @@ export default function MyLocksPage() {
   }
 
   async function handleClaim(lock: LockInfo) {
+    if (!account) return
     setClaiming(lock.id)
     const tx = new Transaction()
 
-    if (lock.type === 'lock') {
-      tx.moveCall({
-        target: `${VESTING_PKG}::token_locker::claim`,
-        arguments: [tx.object(lock.id), tx.object(SUI_CLOCK_OBJECT_ID)],
-        typeArguments: [lock.tokenType],
-      })
-    } else {
-      tx.moveCall({
-        target: `${VESTING_PKG}::vesting_schedule::claim`,
-        arguments: [tx.object(lock.id), tx.object(SUI_CLOCK_OBJECT_ID)],
-        typeArguments: [lock.tokenType],
-      })
-    }
+    const [claimResult] = tx.moveCall({
+      target: `${VESTING_PKG}::${lock.type === 'lock' ? 'token_locker' : 'vesting_schedule'}::claim`,
+      arguments: [
+        tx.object(lock.id),
+        tx.object(SUI_CLOCK_OBJECT_ID),
+      ],
+      typeArguments: [lock.tokenType],
+    })
+
+    // Transfer the returned Coin<T> to the sender so it's not unused
+    tx.transferObjects([claimResult], tx.pure.address(account.address))
 
     signAndExecute(
       { transactionBlock: tx as any },
@@ -275,7 +277,7 @@ export default function MyLocksPage() {
                       <span className="text-xs font-medium px-2 py-0.5 rounded bg-[#D4AF37]/10 text-[#D4AF37]">
                         {lock.type === 'lock' ? 'Token Lock' : 'Vesting'}
                       </span>
-                      <span className="text-xs text-muted-foreground font-mono ml-auto">{lock.tokenType.slice(0, 12)}...</span>
+                      <span className="text-xs text-muted-foreground font-mono ml-auto">{lock.tokenType.slice(0, 10)}...</span>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -289,22 +291,24 @@ export default function MyLocksPage() {
                         <>
                           <div>
                             <span className="text-muted-foreground text-xs">Unlocks</span>
-                            <div className="font-medium text-xs">{lock.unlockTime ? formatDate(lock.unlockTime) : '—'}</div>
+                            <div className="font-medium text-xs">{formatDate(lock.unlockTime ?? 0)}</div>
                           </div>
                           <div>
                             <span className="text-muted-foreground text-xs">Time left</span>
-                            <div className="font-medium text-xs">{lock.unlockTime ? timeLeft(lock.unlockTime) : '—'}</div>
+                            <div className={`font-medium text-xs ${lock.unlockTime && lock.unlockTime <= Date.now() ? 'text-[#D4AF37]' : ''}`}>
+                              {timeLeft(lock.unlockTime ?? 0)}
+                            </div>
                           </div>
                         </>
                       ) : (
                         <>
                           <div>
                             <span className="text-muted-foreground text-xs">Cliff</span>
-                            <div className="font-medium text-xs">{lock.cliffTime ? formatDate(lock.cliffTime) : '—'}</div>
+                            <div className="font-medium text-xs">{formatDate(lock.cliffTime ?? 0)}</div>
                           </div>
                           <div>
                             <span className="text-muted-foreground text-xs">Fully Vested</span>
-                            <div className="font-medium text-xs">{lock.endTime ? formatDate(lock.endTime) : '—'}</div>
+                            <div className="font-medium text-xs">{formatDate(lock.endTime ?? 0)}</div>
                           </div>
                         </>
                       )}
