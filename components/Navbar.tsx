@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { useCurrentAccount } from '@mysten/dapp-kit'
-import { Lock, Coins, Menu, X } from 'lucide-react'
+import { ConnectButton } from '@mysten/dapp-kit'
+import { Lock, Menu, X } from 'lucide-react'
 import { useState } from 'react'
 
 export default function Navbar() {
@@ -36,14 +37,11 @@ export default function Navbar() {
           </Link>
         </div>
 
-        {/* Wallet */}
+        {/* Wallet Connect Button */}
         <div className="flex items-center gap-3">
-          {account ? (
-            <div className="sui-connected-wallet flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium">
-              <Coins className="w-4 h-4" />
-              <span>{account.address.slice(0, 6)}...{account.address.slice(-4)}</span>
-            </div>
-          ) : null}
+          <ConnectButton
+            className="!bg-[#D4AF37]/10 !text-[#D4AF37] !border !border-[#D4AF37]/30 !rounded-lg !px-4 !py-1.5 !text-sm !font-medium hover:!bg-[#D4AF37]/20 transition-all"
+          />
           <button
             className="md:hidden p-2"
             onClick={() => setMenuOpen(!menuOpen)}
