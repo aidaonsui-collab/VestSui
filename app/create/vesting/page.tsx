@@ -8,6 +8,7 @@ import { SUI_CLOCK_OBJECT_ID } from '@mysten/sui/utils'
 
 const VESTING_PKG = process.env.NEXT_PUBLIC_VESTING_PKG || '0x0'
 const PLATFORM_FEE = 1_000_000_000
+const SUI_COIN_TYPE = '0x2::sui::SUI'
 
 export default function CreateVestingPage() {
   const account = useCurrentAccount()
@@ -25,7 +26,7 @@ export default function CreateVestingPage() {
 
   useEffect(() => {
     if (!account) return
-    suiClient.getBalance({ owner: account.address, coinType: '0x2::sui::SUI' })
+    suiClient.getBalance({ owner: account.address, coinType: SUI_COIN_TYPE })
       .then(b => setSuiBalance(Number(b.totalBalance) / 1e9))
       .catch(() => {})
   }, [account, suiClient])
@@ -40,32 +41,53 @@ export default function CreateVestingPage() {
     if (cliffMs <= Date.now()) { setError('Cliff date must be in the future'); return }
     if (endMs <= cliffMs) { setError('End date must be after cliff date'); return }
 
-    let coins
-    try {
-      coins = await suiClient.getCoins({ owner: account.address, coinType: tokenType })
-    } catch {
-      setError('Failed to fetch coins. Check the token address.'); return
-    }
-    if (!coins.data.length) { setError('No tokens of this type found in wallet.'); return }
-
     const amountBase = BigInt(Math.floor(parseFloat(amount) * 1e9))
     const tx = new Transaction()
 
-    const coinToSend = tx.splitCoins(tx.gas, [tx.pure.u64(amountBase)])
-    const feeCoin = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(PLATFORM_FEE))])
+    const isSui = tokenType === SUI_COIN_TYPE
 
-    tx.moveCall({
-      target: `${VESTING_PKG}::vesting_schedule::new`,
-      arguments: [
-        coinToSend,
-        feeCoin,
-        tx.object(SUI_CLOCK_OBJECT_ID),
-        tx.pure.address(beneficiary),
-        tx.pure.u64(BigInt(cliffMs)),
-        tx.pure.u64(BigInt(endMs)),
-      ],
-      typeArguments: [tokenType],
-    })
+    if (isSui) {
+      const coinToSend = tx.splitCoins(tx.gas, [tx.pure.u64(amountBase + BigInt(PLATFORM_FEE))])
+      const feeCoin = tx.splitCoins(coinToSend, [tx.pure.u64(BigInt(PLATFORM_FEE))])
+
+      tx.moveCall({
+        target: `${VESTING_PKG}::vesting_schedule::new`,
+        arguments: [
+          coinToSend,
+          feeCoin,
+          tx.object(SUI_CLOCK_OBJECT_ID),
+          tx.pure.address(beneficiary),
+          tx.pure.u64(BigInt(cliffMs)),
+          tx.pure.u64(BigInt(endMs)),
+        ],
+        typeArguments: [tokenType],
+      })
+    } else {
+      let tokenCoins
+      try {
+        tokenCoins = await suiClient.getCoins({ owner: account.address, coinType: tokenType })
+      } catch {
+        setError('Failed to fetch coins. Check the token address.'); return
+      }
+      if (!tokenCoins.data.length) { setError('No tokens of this type found in wallet.'); return }
+
+      const sourceCoin = tokenCoins.data[0].coinObjectId
+      const coinToSend = tx.splitCoins(tx.object(sourceCoin), [tx.pure.u64(amountBase)])
+      const feeCoin = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(PLATFORM_FEE))])
+
+      tx.moveCall({
+        target: `${VESTING_PKG}::vesting_schedule::new`,
+        arguments: [
+          coinToSend,
+          feeCoin,
+          tx.object(SUI_CLOCK_OBJECT_ID),
+          tx.pure.address(beneficiary),
+          tx.pure.u64(BigInt(cliffMs)),
+          tx.pure.u64(BigInt(endMs)),
+        ],
+        typeArguments: [tokenType],
+      })
+    }
 
     signAndExecute(
       { transactionBlock: tx as any },
@@ -127,7 +149,7 @@ export default function CreateVestingPage() {
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ fontFamily: 'serif' }}>Token Address</label>
                 <input type="text" value={tokenType} onChange={e => setTokenType(e.target.value)}
-                  placeholder="0x...::token::TOKEN" required
+                  placeholder="0x2::sui::SUI (or custom token)" required
                   className="w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#D4AF37]/50 font-mono text-sm" />
               </div>
               <div>
@@ -169,7 +191,7 @@ export default function CreateVestingPage() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Full Vesting</span>
-                <span className="font-medium">{endDate ? new Date(endDate).toLocaleDateString() : '—'}</span>
+                <span className="font-medium">{endDate ? new Date(endDate).toLocaleDate() : '—'}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Beneficiary</span>

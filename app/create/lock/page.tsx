@@ -8,6 +8,7 @@ import { SUI_CLOCK_OBJECT_ID } from '@mysten/sui/utils'
 
 const VESTING_PKG = process.env.NEXT_PUBLIC_VESTING_PKG || '0x0'
 const PLATFORM_FEE = 1_000_000_000 // 1 SUI in MIST
+const SUI_COIN_TYPE = '0x2::sui::SUI'
 
 export default function CreateLockPage() {
   const account = useCurrentAccount()
@@ -24,7 +25,7 @@ export default function CreateLockPage() {
 
   useEffect(() => {
     if (!account) return
-    suiClient.getBalance({ owner: account.address, coinType: '0x2::sui::SUI' })
+    suiClient.getBalance({ owner: account.address, coinType: SUI_COIN_TYPE })
       .then(b => setSuiBalance(Number(b.totalBalance) / 1e9))
       .catch(() => {})
   }, [account, suiClient])
@@ -40,36 +41,60 @@ export default function CreateLockPage() {
       return
     }
 
-    let coins
-    try {
-      coins = await suiClient.getCoins({ owner: account.address, coinType: tokenType })
-    } catch {
-      setError('Failed to fetch your coins. Check the token address.')
-      return
-    }
-
-    if (!coins.data.length) {
-      setError('No tokens of this type found in your wallet.')
-      return
-    }
-
     const amountBase = BigInt(Math.floor(parseFloat(amount) * 1e9))
-
     const tx = new Transaction()
-    const coinToSend = tx.splitCoins(tx.gas, [tx.pure.u64(amountBase)])
-    const feeCoin = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(PLATFORM_FEE))])
 
-    tx.moveCall({
-      target: `${VESTING_PKG}::token_locker::lock`,
-      arguments: [
-        coinToSend,
-        feeCoin,
-        tx.object(SUI_CLOCK_OBJECT_ID),
-        tx.pure.address(beneficiary),
-        tx.pure.u64(BigInt(unlockTimeMs)),
-      ],
-      typeArguments: [tokenType],
-    })
+    const isSui = tokenType === SUI_COIN_TYPE
+
+    if (isSui) {
+      // For SUI: split from gas coin for both token amount and fee
+      const coinToSend = tx.splitCoins(tx.gas, [tx.pure.u64(amountBase + BigInt(PLATFORM_FEE))])
+      const feeCoin = tx.splitCoins(coinToSend, [tx.pure.u64(BigInt(PLATFORM_FEE))])
+
+      tx.moveCall({
+        target: `${VESTING_PKG}::token_locker::lock`,
+        arguments: [
+          coinToSend,
+          feeCoin,
+          tx.object(SUI_CLOCK_OBJECT_ID),
+          tx.pure.address(beneficiary),
+          tx.pure.u64(BigInt(unlockTimeMs)),
+        ],
+        typeArguments: [tokenType],
+      })
+    } else {
+      // For other tokens: fetch the user's coins and use the actual coin
+      let tokenCoins
+      try {
+        tokenCoins = await suiClient.getCoins({ owner: account.address, coinType })
+      } catch {
+        setError('Failed to fetch your coins. Check the token address.')
+        return
+      }
+      if (!tokenCoins.data.length) {
+        setError('No tokens of this type found in your wallet.')
+        return
+      }
+
+      // Use the first coin of this token type as the source
+      const sourceCoin = tokenCoins.data[0].coinObjectId
+      const coinToSend = tx.splitCoins(tx.object(sourceCoin), [tx.pure.u64(amountBase)])
+
+      // For fee: use gas (SUI)
+      const feeCoin = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(PLATFORM_FEE))])
+
+      tx.moveCall({
+        target: `${VESTING_PKG}::token_locker::lock`,
+        arguments: [
+          coinToSend,
+          feeCoin,
+          tx.object(SUI_CLOCK_OBJECT_ID),
+          tx.pure.address(beneficiary),
+          tx.pure.u64(BigInt(unlockTimeMs)),
+        ],
+        typeArguments: [tokenType],
+      })
+    }
 
     signAndExecute(
       { transactionBlock: tx as any },
@@ -108,7 +133,7 @@ export default function CreateLockPage() {
           <Info className="w-4 h-4 text-[#D4AF37] mt-0.5 shrink-0" />
           <div className="text-sm">
             <span className="text-foreground font-medium" style={{ fontFamily: 'serif' }}>1 SUI platform fee</span>
-            <span className="text-muted-foreground"> + gas charged at lock time. </span>
+            <span className="text-muted-foreground"> + gas. </span>
             <span className="text-[#D4AF37] font-medium">Balance: {suiBalance.toFixed(2)} SUI</span>
           </div>
         </div>
@@ -129,7 +154,7 @@ export default function CreateLockPage() {
               <div>
                 <label className="block text-sm font-medium mb-1.5" style={{ fontFamily: 'serif' }}>Token Address</label>
                 <input type="text" value={tokenType} onChange={e => setTokenType(e.target.value)}
-                  placeholder="0x...::token::TOKEN" required
+                  placeholder="0x2::sui::SUI (or custom token)" required
                   className="w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#D4AF37]/50 font-mono text-sm" />
               </div>
               <div>
