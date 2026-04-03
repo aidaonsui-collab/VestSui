@@ -42,13 +42,21 @@ export default function CreateVestingPage() {
     if (endMs <= cliffMs) { setError('End date must be after cliff date'); return }
 
     const amountBase = BigInt(Math.floor(parseFloat(amount) * 1e9))
+    if (amountBase <= 0n) { setError('Amount must be greater than zero'); return }
+
+    // Validate beneficiary format
+    if (!/^0x[a-fA-F0-9]{64}$/.test(beneficiary)) {
+      setError('Invalid beneficiary address. Must be a 66-character hex address (0x + 64 hex chars).')
+      return
+    }
+
     const tx = new Transaction()
 
     const isSui = tokenType === SUI_COIN_TYPE
 
     if (isSui) {
-      const coinToSend = tx.splitCoins(tx.gas, [tx.pure.u64(amountBase + BigInt(PLATFORM_FEE))])
-      const feeCoin = tx.splitCoins(coinToSend, [tx.pure.u64(BigInt(PLATFORM_FEE))])
+      const coinToSend = tx.splitCoins(tx.gas, [tx.pure.u64(amountBase)])
+      const feeCoin = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(PLATFORM_FEE))])
 
       tx.moveCall({
         target: `${VESTING_PKG}::vesting_schedule::new`,
@@ -67,12 +75,19 @@ export default function CreateVestingPage() {
       try {
         tokenCoins = await suiClient.getCoins({ owner: account.address, coinType: tokenType })
       } catch {
-        setError('Failed to fetch coins. Check the token address.'); return
+        setError('Failed to fetch coins. Check the token address format (e.g. 0x...::module::TYPE).'); return
       }
       if (!tokenCoins.data.length) { setError('No tokens of this type found in wallet.'); return }
 
-      const sourceCoin = tokenCoins.data[0].coinObjectId
-      const coinToSend = tx.splitCoins(tx.object(sourceCoin), [tx.pure.u64(amountBase)])
+      // Merge all coin objects then split the desired amount
+      const coinIds = tokenCoins.data.map(c => c.coinObjectId)
+      const primaryCoin = tx.object(coinIds[0])
+
+      if (coinIds.length > 1) {
+        tx.mergeCoins(primaryCoin, coinIds.slice(1).map(id => tx.object(id)))
+      }
+
+      const coinToSend = tx.splitCoins(primaryCoin, [tx.pure.u64(amountBase)])
       const feeCoin = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(PLATFORM_FEE))])
 
       tx.moveCall({
