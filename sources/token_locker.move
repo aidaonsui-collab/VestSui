@@ -1,40 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 
-/// ===========================================================================================
-/// Module: token_locker
-/// Description:
-/// Simple time-locked vault. Tokens are locked until a specified unlock time.
-/// No gradual release — the full balance becomes available all at once after unlock.
-/// Flat fee: 1 SUI + gas charged at lock time, goes to platform admin.
-/// ===========================================================================================
+/// Token Locker — simple time vault for Sui.
+/// Tokens locked until a specified unlock date. All tokens claimable at once.
 module vesting_platform::token_locker;
 
 use sui::balance::Balance;
 use sui::clock::Clock;
 use sui::coin::{Self, Coin};
 use sui::event;
-use sui::transfer;
-use sui::tx_context::TxContext;
 use sui::sui::SUI;
 
 // === Errors ===
+#[error]
 const EAlreadyUnlocked: vector<u8> = b"Tokens are still locked.";
+#[error]
 const ENoTokensLocked: vector<u8> = b"No tokens to claim.";
+#[error]
 const ENotBeneficiary: vector<u8> = b"Only the beneficiary can claim.";
+#[error]
 const EUnlockTimeNotReached: vector<u8> = b"Unlock time has not been reached.";
+#[error]
 const EInsufficientFee: vector<u8> = b"Insufficient fee. Required: 1 SUI.";
 
 // === Constants ===
-/// Flat platform fee charged on every lock (1 SUI = 1_000_000_000 MIST)
-const PLATFORM_FEE: u64 = 1_000_000_000; // 1 SUI in MIST
+/// 1 SUI in MIST
+const PLATFORM_FEE: u64 = 1_000_000_000;
 
-/// Platform admin wallet that receives fees
+/// Platform admin wallet
 const ADMIN: address = @0x92a32ac7fd525f8bd37ed359423b8d7d858cad26224854dfbff1914b75ee658b;
 
 // === Structs ===
 
-public struct TokenLock<phantom T> has key, id: UID {
-    phantom: Phantom<T>,
+/// [Shared] Token lock holding tokens until unlock_time.
+/// After unlock, beneficiary claims everything at once.
+public struct TokenLock<phantom T> has key {
+    id: UID,
     beneficiary: address,
     unlock_time: u64,
     balance: Balance<T>,
@@ -44,7 +44,7 @@ public struct TokenLock<phantom T> has key, id: UID {
 // === Events ===
 
 public struct TokensLocked has copy, drop {
-    lock_id: ID,
+    lock_id: vector<u8>,
     beneficiary: address,
     creator: address,
     amount: u64,
@@ -53,27 +53,20 @@ public struct TokensLocked has copy, drop {
 }
 
 public struct TokensClaimed has copy, drop {
-    lock_id: ID,
+    lock_id: vector<u8>,
     beneficiary: address,
     amount: u64,
 }
 
 public struct PlatformFeeCollected has copy, drop {
-    lock_id: ID,
+    lock_id: vector<u8>,
     fee_amount: u64,
     admin: address,
 }
 
 // === Core Functions ===
 
-/// Lock tokens until `unlock_time`. Charges 1 SUI flat fee.
-/// After unlock_time, only the beneficiary can claim all tokens.
-///
-/// @param coins Token coins to lock
-/// @param fee_coins Coin<SUI> covering 1 SUI fee + gas
-/// @param clock Sui clock
-/// @param beneficiary Who receives tokens after unlock
-/// @param unlock_time Unix timestamp in milliseconds
+/// Lock tokens until `unlock_time`. Charges 1 SUI platform fee.
 public fun lock<T>(
     coins: Coin<T>,
     fee_coins: Coin<SUI>,
@@ -84,17 +77,14 @@ public fun lock<T>(
 ) {
     assert!(unlock_time > clock.timestamp_ms(), EUnlockTimeNotReached);
 
-    // Charge 1 SUI platform fee
-    let fee_balance = fee_coins.into_balance();
+    let mut fee_balance = fee_coins.into_balance();
     assert!(fee_balance.value() >= PLATFORM_FEE, EInsufficientFee);
 
     let platform_fee = fee_balance.split(PLATFORM_FEE);
     let leftover = fee_balance;
 
-    // Send fee to admin
     transfer::public_transfer(coin::from_balance(platform_fee, ctx), ADMIN);
 
-    // Refund excess fee to sender
     if (leftover.value() > 0) {
         transfer::public_transfer(coin::from_balance(leftover, ctx), ctx.sender());
     } else {
@@ -121,7 +111,6 @@ public fun lock<T>(
 
     let lock = TokenLock<T> {
         id: lock_id,
-        phantom: phantom(),
         beneficiary,
         unlock_time,
         balance: coins.into_balance(),
@@ -131,8 +120,7 @@ public fun lock<T>(
     transfer::share_object(lock);
 }
 
-/// Claim all unlocked tokens. Only the beneficiary after unlock time.
-/// No fee on claim — gas only.
+/// Claim all unlocked tokens. Beneficiary only. No fee on claim.
 public fun claim<T>(
     lock: &mut TokenLock<T>,
     clock: &Clock,

@@ -1,26 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
-/// ===========================================================================================
-/// Module: vesting_schedule
-/// Description:
-/// Vesting schedule with cliff + linear release.
-/// Flat fee: 1 SUI + gas charged at creation, goes to platform admin.
-/// ===========================================================================================
+/// Vesting Schedule — cliff + linear release for Sui.
+/// Tokens vest gradually after cliff period. Beneficiary can claim partial amounts.
 module vesting_platform::vesting_schedule;
 
 use sui::balance::Balance;
 use sui::clock::Clock;
 use sui::coin::{Self, Coin};
 use sui::event;
-use sui::transfer;
-use sui::tx_context::TxContext;
 use sui::sui::SUI;
 
 // === Errors ===
+#[error]
 const ECliffNotReached: vector<u8> = b"Vesting cliff has not been reached yet.";
+#[error]
 const ENoTokensVested: vector<u8> = b"No tokens are currently vested.";
+#[error]
 const ENotBeneficiary: vector<u8> = b"Only the beneficiary can claim.";
+#[error]
 const EInvalidSchedule: vector<u8> = b"Cliff must be after now and before end time.";
+#[error]
 const EInsufficientFee: vector<u8> = b"Insufficient fee. Required: 1 SUI.";
 
 // === Constants ===
@@ -29,8 +28,9 @@ const ADMIN: address = @0x92a32ac7fd525f8bd37ed359423b8d7d858cad26224854dfbff191
 
 // === Structs ===
 
-public struct VestingWallet<phantom T> has key, id: UID {
-    phantom: Phantom<T>,
+/// [Shared] Vesting wallet. Tokens vest after cliff and release linearly.
+public struct VestingWallet<phantom T> has key {
+    id: UID,
     beneficiary: address,
     cliff_time: u64,
     end_time: u64,
@@ -43,7 +43,7 @@ public struct VestingWallet<phantom T> has key, id: UID {
 // === Events ===
 
 public struct VestingScheduleCreated has copy, drop {
-    wallet_id: ID,
+    wallet_id: vector<u8>,
     beneficiary: address,
     creator: address,
     total_amount: u64,
@@ -53,29 +53,21 @@ public struct VestingScheduleCreated has copy, drop {
 }
 
 public struct TokensVested has copy, drop {
-    wallet_id: ID,
+    wallet_id: vector<u8>,
     beneficiary: address,
     amount_claimed: u64,
     remaining_balance: u64,
 }
 
 public struct PlatformFeeCollected has copy, drop {
-    wallet_id: ID,
+    wallet_id: vector<u8>,
     fee_amount: u64,
     admin: address,
 }
 
 // === Core Functions ===
 
-/// Create a vesting wallet with cliff + linear release.
-/// Charges 1 SUI platform fee.
-///
-/// @param coins Tokens to vest
-/// @param fee_coins Coin<SUI> covering 1 SUI fee + gas
-/// @param clock Sui clock
-/// @param beneficiary Who receives the tokens
-/// @param cliff_time When first tokens become claimable (ms)
-/// @param end_time When all tokens are fully vested (ms)
+/// Create a vesting wallet with cliff + linear release. Charges 1 SUI fee.
 public fun new<T>(
     coins: Coin<T>,
     fee_coins: Coin<SUI>,
@@ -84,12 +76,11 @@ public fun new<T>(
     cliff_time: u64,
     end_time: u64,
     ctx: &mut TxContext,
-): VestingWallet<T> {
+) {
     assert!(cliff_time >= clock.timestamp_ms(), EInvalidSchedule);
     assert!(end_time > cliff_time, EInvalidSchedule);
 
-    // Charge 1 SUI platform fee
-    let fee_balance = fee_coins.into_balance();
+    let mut fee_balance = fee_coins.into_balance();
     assert!(fee_balance.value() >= PLATFORM_FEE, EInsufficientFee);
 
     let platform_fee = fee_balance.split(PLATFORM_FEE);
@@ -124,7 +115,6 @@ public fun new<T>(
 
     let wallet = VestingWallet<T> {
         id: wallet_id,
-        phantom: phantom(),
         beneficiary,
         cliff_time,
         end_time,
@@ -135,7 +125,6 @@ public fun new<T>(
     };
 
     transfer::share_object(wallet);
-    wallet
 }
 
 /// Claim vested tokens. Beneficiary only. No fee on claim.
@@ -163,9 +152,6 @@ public fun claim<T>(
 }
 
 /// Calculate currently claimable amount.
-/// - Before cliff: 0
-/// - After cliff, before end: linear proportional release
-/// - After end: entire remaining balance
 public fun claimable<T>(wallet: &VestingWallet<T>, clock: &Clock): u64 {
     let timestamp = clock.timestamp_ms();
 
@@ -182,7 +168,6 @@ public fun claimable<T>(wallet: &VestingWallet<T>, clock: &Clock): u64 {
         return remaining
     };
 
-    // Linear: vested = total * elapsed / duration
     let vested_total: u128 =
         ((wallet.total_amount as u128) * ((timestamp - wallet.cliff_time) as u128))
         / ((wallet.end_time - wallet.cliff_time) as u128);
@@ -233,14 +218,14 @@ public fun vested_bps<T>(wallet: &VestingWallet<T>, clock: &Clock): u64 {
     (vested_total(wallet, clock) * 10000) / total
 }
 
-/// Milliseconds until cliff (0 if already past cliff).
+/// Milliseconds until cliff.
 public fun time_until_cliff<T>(wallet: &VestingWallet<T>, clock: &Clock): u64 {
     let timestamp = clock.timestamp_ms();
     if (timestamp >= wallet.cliff_time) 0
     else wallet.cliff_time - timestamp
 }
 
-/// Milliseconds until fully vested (0 if at or past end_time).
+/// Milliseconds until fully vested.
 public fun time_until_end<T>(wallet: &VestingWallet<T>, clock: &Clock): u64 {
     let timestamp = clock.timestamp_ms();
     if (timestamp >= wallet.end_time) 0

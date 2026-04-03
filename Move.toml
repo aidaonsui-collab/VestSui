@@ -1,9 +1,7 @@
 [package]
 name = "vesting_platform"
 version = "0.0.1"
-
-[dependencies]
-Sui = { local = "${HOME}/.sui/sui-framework/packages/sui-framework" }
+edition = "2024"
 
 [addresses]
 vesting_platform = "0x0"
