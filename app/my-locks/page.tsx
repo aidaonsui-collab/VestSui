@@ -203,9 +203,9 @@ export default function MyLocksPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
                       {lock.type === 'lock'
-                        ? <Lock className="w-4 h-4 text-purple-400 shrink-0" />
-                        : <TrendingUp className="w-4 h-4 text-green-400 shrink-0" />}
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${lock.type === 'lock' ? 'bg-purple-500/10 text-purple-400' : 'bg-green-500/10 text-green-400'}`}>
+                        ? <Lock className="w-4 h-4 text-[#D4AF37] shrink-0" />
+                        : <TrendingUp className="w-4 h-4 text-[#D4AF37] shrink-0" />}
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${lock.type === 'lock' ? 'bg-[#D4AF37]/10 text-[#D4AF37]' : 'bg-[#D4AF37]/10 text-[#D4AF37]'}`}>
                         {lock.type === 'lock' ? 'Token Lock' : 'Vesting'}
                       </span>
                       <span className="text-xs text-muted-foreground font-mono">{lock.tokenType.slice(0, 12)}...</span>
@@ -220,7 +220,7 @@ export default function MyLocksPage() {
                         <div>
                           <span className="text-muted-foreground text-xs">Unlocks</span>
                           <div className="font-medium">{lock.unlockTime ? formatDate(lock.unlockTime) : '—'}</div>
-                          {lock.unlockTime && <div className={`text-xs font-medium ${lock.unlockTime <= Date.now() ? 'text-green-400' : 'text-muted-foreground'}`}>
+                          {lock.unlockTime && <div className={`text-xs font-medium ${lock.unlockTime <= Date.now() ? 'text-[#D4AF37]' : 'text-muted-foreground'}`}>
                             {timeLeft(lock.unlockTime)}
                           </div>}
                         </div>
@@ -253,7 +253,7 @@ export default function MyLocksPage() {
                   <div className="flex flex-col gap-2 items-end shrink-0">
                     {txDigests[lock.id] ? (
                       <a href={`https://suivision.xyz/txblock/${txDigests[lock.id]}`} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-xs text-green-400">
+                        className="flex items-center gap-1 text-xs text-[#D4AF37]">
                         <CheckCircle className="w-3 h-3" /> Claimed <ExternalLink className="w-3 h-3" />
                       </a>
                     ) : lock.type === 'lock' && lock.unlockTime && lock.unlockTime > Date.now() ? (
@@ -268,7 +268,7 @@ export default function MyLocksPage() {
                       <button
                         onClick={() => handleClaim(lock)}
                         disabled={claiming === lock.id}
-                        className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/80 disabled:opacity-50 text-sm font-medium transition-all glow-purple flex items-center gap-1.5"
+                        className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/80 disabled:opacity-50 text-sm font-medium transition-all gold-glow flex items-center gap-1.5"
                       >
                         {claiming === lock.id
                           ? <Loader2 className="w-3 h-3 animate-spin" />

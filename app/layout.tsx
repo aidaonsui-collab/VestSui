@@ -8,7 +8,7 @@ import '@mysten/dapp-kit/dist/index.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'VestSui — Token Lock & Vesting on Sui',
+  title: 'SuiLock — Sui\'s Official Token & Vesting Locker',
   description: 'Lock tokens or create vesting schedules for your team, investors, and liquidity on Sui blockchain.',
 }
 

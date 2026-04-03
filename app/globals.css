@@ -10,19 +10,19 @@
     --card-foreground: 0 0% 100%;
     --popover: 240 10% 6%;
     --popover-foreground: 0 0% 100%;
-    --primary: 280 80% 60%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 43 74% 56%;
+    --primary-foreground: 0 0% 0%;
     --secondary: 240 10% 10%;
     --secondary-foreground: 0 0% 100%;
     --muted: 240 10% 15%;
     --muted-foreground: 240 5% 65%;
-    --accent: 150 80% 50%;
+    --accent: 43 74% 56%;
     --accent-foreground: 0 0% 0%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
     --border: 240 10% 15%;
     --input: 240 10% 15%;
-    --ring: 280 80% 60%;
+    --ring: 43 74% 56%;
     --radius: 0.75rem;
   }
 }
@@ -35,23 +35,19 @@
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: #0a0a0f; }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #a855f7, #22c55e);
+  background: linear-gradient(180deg, #D4AF37, #F5D76E, #D4AF37);
   border-radius: 4px;
 }
 
-.gradient-text {
-  background: linear-gradient(90deg, #a855f7, #ec4899, #22c55e);
+.gold-gradient-text {
+  background: linear-gradient(135deg, #D4AF37, #F5D76E 40%, #C9A227 60%, #D4AF37);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-.glow-purple {
-  box-shadow: 0 0 20px rgba(168, 85, 247, 0.4), 0 0 40px rgba(168, 85, 247, 0.1);
-}
-
-.glow-green {
-  box-shadow: 0 0 20px rgba(34, 197, 94, 0.4), 0 0 40px rgba(34, 197, 94, 0.1);
+.gold-glow {
+  box-shadow: 0 0 20px rgba(212, 175, 55, 0.4), 0 0 40px rgba(212, 175, 55, 0.1);
 }
 
 @keyframes fadeIn {
@@ -61,17 +57,21 @@
 
 .fade-in { animation: fadeIn 0.4s ease forwards; }
 
-.stat-value { text-shadow: 0 0 12px rgba(168, 85, 247, 0.6); }
-.stat-value-green { text-shadow: 0 0 12px rgba(34, 197, 94, 0.6); }
+.stat-value { text-shadow: 0 0 12px rgba(212, 175, 55, 0.6); }
+.stat-value-gold { text-shadow: 0 0 12px rgba(212, 175, 55, 0.6); }
 
 .sui-connect-button {
-  background-color: rgba(147, 51, 234, 0.2) !important;
-  color: #d8b4fe !important;
-  border: 1px solid rgba(168, 85, 247, 0.4) !important;
+  background-color: rgba(212, 175, 55, 0.15) !important;
+  color: #D4AF37 !important;
+  border: 1px solid rgba(212, 175, 55, 0.4) !important;
 }
-.sui-connect-button:hover { background-color: rgba(168, 85, 247, 0.2) !important; }
+.sui-connect-button:hover { background-color: rgba(212, 175, 55, 0.25) !important; }
 
 .sui-connected-wallet {
-  color: #4ade80 !important;
-  background-color: rgba(34, 197, 94, 0.1) !important;
+  color: #D4AF37 !important;
+  background-color: rgba(212, 175, 55, 0.1) !important;
+}
+
+.gold-border-glow {
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.25), 0 0 24px rgba(212, 175, 55, 0.08);
 }

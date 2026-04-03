@@ -1,5 +1,5 @@
 {
-  "name": "sui-vesting-platform",
+  "name": "sui-lock",
   "version": "0.0.1",
   "private": true,
   "scripts": {

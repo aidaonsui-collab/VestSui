@@ -7,7 +7,7 @@ import { Transaction } from '@mysten/sui/transactions'
 import { SUI_CLOCK_OBJECT_ID } from '@mysten/sui/utils'
 
 const VESTING_PKG = process.env.NEXT_PUBLIC_VESTING_PKG || '0x0'
-const PLATFORM_FEE = 1_000_000_000 // 1 SUI in MIST
+const PLATFORM_FEE = 1_000_000_000
 
 export default function CreateVestingPage() {
   const account = useCurrentAccount()
@@ -44,10 +44,9 @@ export default function CreateVestingPage() {
     try {
       coins = await suiClient.getCoins({ owner: account.address, coinType: tokenType })
     } catch {
-      setError('Failed to fetch coins. Check the token address.')
-      return
+      setError('Failed to fetch coins. Check the token address.'); return
     }
-    if (!coins.data.length) { setError(`No ${tokenType} tokens found in wallet.`); return }
+    if (!coins.data.length) { setError('No tokens of this type found in wallet.'); return }
 
     const amountBase = BigInt(Math.floor(parseFloat(amount) * 1e9))
     const tx = new Transaction()
@@ -81,8 +80,8 @@ export default function CreateVestingPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="text-center p-8 rounded-xl bg-card border border-border max-w-sm">
-          <TrendingUp className="w-12 h-12 text-green-400 mx-auto mb-4 opacity-50" />
-          <h2 className="text-xl font-bold mb-2">Connect Your Wallet</h2>
+          <TrendingUp className="w-12 h-12 text-[#D4AF37] mx-auto mb-4 opacity-50" />
+          <h2 className="text-xl font-bold mb-2" style={{ fontFamily: 'serif' }}>Connect Your Wallet</h2>
           <p className="text-muted-foreground">Connect your Sui wallet to create a vesting schedule.</p>
         </div>
       </div>
@@ -93,32 +92,32 @@ export default function CreateVestingPage() {
     <div className="min-h-screen bg-background">
       <div className="max-w-xl mx-auto px-4 py-12">
         <div className="mb-8">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 mb-4">
-            <TrendingUp className="w-3 h-3 text-green-400" />
-            <span className="text-xs text-green-400 font-medium">Vesting Schedule</span>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/20 mb-4">
+            <TrendingUp className="w-3 h-3 text-[#D4AF37]" />
+            <span className="text-xs text-[#D4AF37] font-medium" style={{ fontFamily: 'serif' }}>Vesting Schedule</span>
           </div>
-          <h1 className="text-3xl font-bold mb-2">Create Vesting</h1>
+          <h1 className="text-3xl font-bold mb-2 gold-gradient-text" style={{ fontFamily: 'serif' }}>Create Vesting</h1>
           <p className="text-muted-foreground">Cliff + linear release. Tokens vest gradually after the cliff period.</p>
         </div>
 
         <div className="flex items-start gap-3 p-4 rounded-lg bg-secondary border border-border mb-6">
-          <Info className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+          <Info className="w-4 h-4 text-[#D4AF37] mt-0.5 shrink-0" />
           <div className="text-sm">
-            <span className="text-foreground font-medium">1 SUI platform fee</span>
+            <span className="text-foreground font-medium" style={{ fontFamily: 'serif' }}>1 SUI platform fee</span>
             <span className="text-muted-foreground"> + gas. Your balance: </span>
-            <span className="text-green-400 font-medium">{suiBalance.toFixed(2)} SUI</span>
+            <span className="text-[#D4AF37] font-medium">{suiBalance.toFixed(2)} SUI</span>
           </div>
         </div>
 
         {txDigest ? (
-          <div className="text-center p-8 rounded-xl bg-card border border-green-500/20 fade-in">
-            <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-4" />
-            <h2 className="text-xl font-bold mb-2">Vesting Created!</h2>
+          <div className="text-center p-8 rounded-xl bg-card border border-[#D4AF37]/20 fade-in">
+            <CheckCircle className="w-12 h-12 text-[#D4AF37] mx-auto mb-4" />
+            <h2 className="text-xl font-bold mb-2" style={{ fontFamily: 'serif' }}>Vesting Created!</h2>
             <p className="text-muted-foreground mb-4">
               {amount} tokens vesting from {new Date(cliffDate).toLocaleDateString()} to {new Date(endDate).toLocaleDateString()}
             </p>
             <a href={`https://suivision.xyz/txblock/${txDigest}`} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
+              className="inline-flex items-center gap-1 text-sm text-[#D4AF37] hover:underline">
               View on Suivision <ExternalLink className="w-3 h-3" />
             </a>
           </div>
@@ -126,44 +125,40 @@ export default function CreateVestingPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="p-6 rounded-xl bg-card border border-border space-y-5">
               <div>
-                <label className="block text-sm font-medium mb-1.5">Token Address</label>
+                <label className="block text-sm font-medium mb-1.5" style={{ fontFamily: 'serif' }}>Token Address</label>
                 <input type="text" value={tokenType} onChange={e => setTokenType(e.target.value)}
                   placeholder="0x...::token::TOKEN" required
-                  className="w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 font-mono text-sm" />
+                  className="w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#D4AF37]/50 font-mono text-sm" />
               </div>
-
               <div>
-                <label className="block text-sm font-medium mb-1.5">Total Amount to Vest</label>
+                <label className="block text-sm font-medium mb-1.5" style={{ fontFamily: 'serif' }}>Total Amount to Vest</label>
                 <input type="number" step="any" value={amount} onChange={e => setAmount(e.target.value)}
                   placeholder="e.g. 1000000" required
-                  className="w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50" />
+                  className="w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#D4AF37]/50" />
               </div>
-
               <div>
-                <label className="block text-sm font-medium mb-1.5">Beneficiary Address</label>
+                <label className="block text-sm font-medium mb-1.5" style={{ fontFamily: 'serif' }}>Beneficiary Address</label>
                 <input type="text" value={beneficiary} onChange={e => setBeneficiary(e.target.value)}
                   placeholder="0x... (who receives tokens)" required
-                  className="w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 font-mono text-sm" />
+                  className="w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#D4AF37]/50 font-mono text-sm" />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1.5">Cliff Date</label>
+                  <label className="block text-sm font-medium mb-1.5" style={{ fontFamily: 'serif' }}>Cliff Date</label>
                   <input type="datetime-local" value={cliffDate} onChange={e => setCliffDate(e.target.value)} required
-                    className="w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground focus:outline-none focus:border-primary/50" />
+                    className="w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground focus:outline-none focus:border-[#D4AF37]/50" />
                   <p className="text-xs text-muted-foreground mt-1">When first tokens unlock</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1.5">End Date</label>
+                  <label className="block text-sm font-medium mb-1.5" style={{ fontFamily: 'serif' }}>End Date</label>
                   <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} required
-                    className="w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground focus:outline-none focus:border-primary/50" />
+                    className="w-full px-4 py-2.5 rounded-lg bg-secondary border border-border text-foreground focus:outline-none focus:border-[#D4AF37]/50" />
                   <p className="text-xs text-muted-foreground mt-1">When all tokens are vested</p>
                 </div>
               </div>
             </div>
 
-            {/* Summary */}
-            <div className="p-4 rounded-lg bg-primary/5 border border-primary/20 space-y-2">
+            <div className="p-4 rounded-lg bg-[#D4AF37]/5 border border-[#D4AF37]/20 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Total Amount</span>
                 <span className="font-medium">{amount || '—'} tokens</span>
@@ -182,7 +177,7 @@ export default function CreateVestingPage() {
               </div>
               <div className="border-t border-border/50 pt-2 flex justify-between text-sm">
                 <span className="text-muted-foreground">Platform Fee</span>
-                <span className="font-medium text-primary">1 SUI + gas</span>
+                <span className="font-medium text-[#D4AF37]">1 SUI + gas</span>
               </div>
             </div>
 
@@ -193,7 +188,8 @@ export default function CreateVestingPage() {
             )}
 
             <button type="submit" disabled={isPending}
-              className="w-full py-3 rounded-lg bg-accent hover:bg-accent/80 disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all glow-green text-black flex items-center justify-center gap-2">
+              className="w-full py-3 rounded-lg gold-gradient-text border border-[#D4AF37]/30 hover:bg-[#D4AF37]/10 disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-all gold-glow flex items-center justify-center gap-2"
+              style={{ fontFamily: 'serif' }}>
               {isPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating...</> : 'Create Vesting Schedule'}
             </button>
           </form>

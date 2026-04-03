@@ -1,12 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { useCurrentAccount as useAccount } from '@mysten/dapp-kit'
-import { Lock, Coins, User, Menu, X } from 'lucide-react'
+import { useCurrentAccount } from '@mysten/dapp-kit'
+import { Lock, Coins, Menu, X } from 'lucide-react'
 import { useState } from 'react'
 
 export default function Navbar() {
-  const account = useAccount()
+  const account = useCurrentAccount()
   const [menuOpen, setMenuOpen] = useState(false)
 
   return (
@@ -14,10 +14,10 @@ export default function Navbar() {
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center glow-purple">
-            <Lock className="w-4 h-4 text-primary" />
+          <div className="w-8 h-8 rounded-lg bg-[#D4AF37]/10 flex items-center justify-center gold-glow">
+            <Lock className="w-4 h-4 text-[#D4AF37]" />
           </div>
-          <span className="font-bold text-lg gradient-text">VestSui</span>
+          <span className="font-bold text-lg gold-gradient-text" style={{ fontFamily: 'serif' }}>SuiLock</span>
         </Link>
 
         {/* Desktop Nav */}
