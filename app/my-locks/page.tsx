@@ -8,7 +8,6 @@ import { SUI_CLOCK_OBJECT_ID } from '@mysten/sui/utils'
 
 const VESTING_PKG = process.env.NEXT_PUBLIC_VESTING_PKG || '0x0'
 const RPC_URL = process.env.NEXT_PUBLIC_SUI_RPC || 'https://fullnode.mainnet.sui.io'
-
 const SUI_COIN_TYPE = '0x2::sui::SUI'
 
 interface LockInfo {
@@ -21,18 +20,11 @@ interface LockInfo {
   cliffTime?: number
   endTime?: number
   totalAmount?: string
-  claimed?: string
   creator: string
 }
 
-async function rpcCall(method: string, params: unknown[]) {
-  const res = await fetch(RPC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-  })
-  const j = await res.json() as { result: unknown }
-  return j.result
+function bytesToHex(bytes: number[]): string {
+  return '0x' + bytes.map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 function formatDate(ms: number): string {
@@ -44,17 +36,37 @@ function timeLeft(ms: number): string {
   if (diff <= 0) return 'Unlocked'
   const d = Math.floor(diff / 86400000)
   const h = Math.floor((diff % 86400000) / 3600000)
-  const m = Math.floor((diff % 3600000) / 60000)
   if (d > 0) return `${d}d ${h}h`
-  if (h > 0) return `${h}h ${m}m`
-  return `${m}m`
+  if (h > 0) return `${h}h`
+  return `${Math.floor(diff / 60000)}m`
 }
 
-function formatAmount(raw: string, decimals: number = 9): string {
+function formatAmount(raw: string, decimals = 9): string {
   const val = parseInt(raw) / Math.pow(10, decimals)
   if (val >= 1_000_000) return (val / 1_000_000).toFixed(2) + 'M'
   if (val >= 1_000) return (val / 1_000).toFixed(2) + 'K'
   return val.toFixed(2)
+}
+
+async function queryEvents(eventType: string, module: string) {
+  const fullEvent = `${VESTING_PKG}::${module}::${eventType}`
+  const res = await fetch(RPC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'suix_queryEvents',
+      params: [
+        { MoveEventType: fullEvent },
+        null,
+        50,
+        true,
+      ],
+    }),
+  })
+  const j = await res.json() as { result?: { data?: unknown[] } }
+  return j.result?.data || []
 }
 
 export default function MyLocksPage() {
@@ -79,40 +91,25 @@ export default function MyLocksPage() {
     setError('')
 
     try {
-      // Query all TokenLock objects (shared — not owned, so use getDynamicFields on a registry or query events)
-      // Since locks are shared objects, we query all of them and filter by beneficiary
-      const lockObjs = await rpcCall('suix_queryEvents', [
-        {
-          query: { EventType: `${VESTING_PKG}::token_locker::TokensLocked` },
-          descending: true,
-        },
-        null,
-        50,
-        true,
-      ]) as { data?: { bcs?: string; fields?: Record<string, unknown>; parsedJson?: Record<string, unknown> }[] }
-
-      const vestingObjs = await rpcCall('suix_queryEvents', [
-        {
-          query: { EventType: `${VESTING_PKG}::vesting_schedule::VestingScheduleCreated` },
-          descending: true,
-        },
-        null,
-        50,
-        true,
-      ]) as { data?: { bcs?: string; fields?: Record<string, unknown>; parsedJson?: Record<string, unknown> }[] }
+      const lockEvents = await queryEvents('TokensLocked', 'token_locker')
+      const vestingEvents = await queryEvents('VestingScheduleCreated', 'vesting_schedule')
 
       const results: LockInfo[] = []
 
-      // Parse token locks from events
-      for (const evt of (lockObjs as any)?.data || []) {
+      // Parse token lock events
+      for (const evt of lockEvents as Record<string, unknown>[]) {
         const fields = evt.parsedJson as Record<string, unknown> | undefined
         if (!fields) continue
         const beneficiary = fields.beneficiary as string
-        if (beneficiary !== account.address) continue
+        if (beneficiary.toLowerCase() !== account.address.toLowerCase()) continue
+
+        const rawId = fields.lock_id
+        const lockId = Array.isArray(rawId) ? bytesToHex(rawId as number[]) : String(rawId)
+
         results.push({
-          id: fields.lock_id as string,
+          id: lockId,
           type: 'lock',
-          tokenType: fields.token_type ? (fields.token_type as string) : SUI_COIN_TYPE,
+          tokenType: SUI_COIN_TYPE,
           balance: fields.amount as string,
           beneficiary,
           unlockTime: fields.unlock_time as number,
@@ -120,47 +117,33 @@ export default function MyLocksPage() {
         })
       }
 
-      // Parse vesting wallets from events
-      for (const evt of (vestingObjs as any)?.data || []) {
+      // Parse vesting events
+      for (const evt of vestingEvents as Record<string, unknown>[]) {
         const fields = evt.parsedJson as Record<string, unknown> | undefined
         if (!fields) continue
         const beneficiary = fields.beneficiary as string
-        if (beneficiary !== account.address) continue
+        if (beneficiary.toLowerCase() !== account.address.toLowerCase()) continue
+
+        const rawId = fields.wallet_id
+        const walletId = Array.isArray(rawId) ? bytesToHex(rawId as number[]) : String(rawId)
+
         results.push({
-          id: fields.wallet_id as string,
+          id: walletId,
           type: 'vesting',
-          tokenType: fields.token_type ? (fields.token_type as string) : SUI_COIN_TYPE,
-          balance: '0', // will be fetched on demand
+          tokenType: SUI_COIN_TYPE,
+          balance: fields.total_amount as string,
           beneficiary,
           cliffTime: fields.cliff_time as number,
           endTime: fields.end_time as number,
           totalAmount: fields.total_amount as string,
-          claimed: '0',
           creator: fields.creator as string,
         })
-      }
-
-      // For each lock, fetch the actual balance from the object
-      for (const lock of results) {
-        if (lock.type === 'lock' && lock.balance === '0') {
-          try {
-            const obj = await rpcCall('sui_getObject', [
-              lock.id,
-              { showContent: true, showType: true },
-            ]) as Record<string, unknown>
-            const content = (obj.data as Record<string, unknown>)?.content as Record<string, unknown>
-            if (content?.fields) {
-              const f = content.fields as Record<string, unknown>
-              lock.balance = (f.balance as Record<string, unknown>)?.value as string || '0'
-            }
-          } catch { /* object might have been claimed */ }
-        }
       }
 
       setLocks(results)
     } catch (e) {
       console.error(e)
-      setError('Failed to load locks. Make sure the contract package ID is correct.')
+      setError('Failed to load locks. Verify the package ID and RPC URL.')
     } finally {
       setLoading(false)
     }
@@ -218,8 +201,9 @@ export default function MyLocksPage() {
             <p className="text-muted-foreground">Your token locks and vesting schedules</p>
           </div>
           <button onClick={loadLocks} disabled={loading}
-            className="px-4 py-2 rounded-lg bg-secondary border border-border text-sm hover:bg-muted transition-colors disabled:opacity-50">
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Refresh'}
+            className="px-4 py-2 rounded-lg bg-secondary border border-border text-sm hover:bg-muted transition-colors disabled:opacity-50 flex items-center gap-2">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Refresh
           </button>
         </div>
 
@@ -236,8 +220,8 @@ export default function MyLocksPage() {
         ) : locks.length === 0 ? (
           <div className="text-center py-20 rounded-xl bg-card border border-border">
             <Lock className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-30" />
-            <p className="text-muted-foreground">No locks or vesting schedules found for your wallet.</p>
-            <p className="text-xs text-muted-foreground mt-2">Make sure you are the beneficiary of the locks.</p>
+            <p className="text-muted-foreground">No locks found where you are the beneficiary.</p>
+            <p className="text-xs text-muted-foreground mt-2">Try locking some tokens first.</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -252,7 +236,6 @@ export default function MyLocksPage() {
                       <span className="text-xs font-medium px-2 py-0.5 rounded bg-[#D4AF37]/10 text-[#D4AF37]">
                         {lock.type === 'lock' ? 'Token Lock' : 'Vesting'}
                       </span>
-                      <span className="text-xs text-muted-foreground font-mono">{lock.tokenType.slice(0, 12)}...</span>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -270,9 +253,7 @@ export default function MyLocksPage() {
                           </div>
                           <div>
                             <span className="text-muted-foreground text-xs">Time left</span>
-                            <div className={`font-medium text-xs ${lock.unlockTime && lock.unlockTime <= Date.now() ? 'text-[#D4AF37]' : ''}`}>
-                              {lock.unlockTime ? timeLeft(lock.unlockTime) : '—'}
-                            </div>
+                            <div className="font-medium text-xs">{lock.unlockTime ? timeLeft(lock.unlockTime) : '—'}</div>
                           </div>
                         </>
                       ) : (
@@ -294,7 +275,6 @@ export default function MyLocksPage() {
                     </div>
                   </div>
 
-                  {/* Actions */}
                   <div className="flex flex-col gap-2 items-end shrink-0">
                     {txDigests[lock.id] ? (
                       <a href={`https://suivision.xyz/txblock/${txDigests[lock.id]}`} target="_blank" rel="noopener noreferrer"
