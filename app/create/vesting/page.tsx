@@ -191,7 +191,7 @@ export default function CreateVestingPage() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Full Vesting</span>
-                <span className="font-medium">{endDate ? new Date(endDate).toLocaleDate() : '—'}</span>
+                <span className="font-medium">{endDate ? new Date(endDate).toLocaleDateString() : '—'}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Beneficiary</span>

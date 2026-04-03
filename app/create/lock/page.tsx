@@ -66,7 +66,7 @@ export default function CreateLockPage() {
       // For other tokens: fetch the user's coins and use the actual coin
       let tokenCoins
       try {
-        tokenCoins = await suiClient.getCoins({ owner: account.address, coinType })
+        tokenCoins = await suiClient.getCoins({ owner: account.address, coinType: tokenType })
       } catch {
         setError('Failed to fetch your coins. Check the token address.')
         return

@@ -6,3 +6,4 @@ Move.lock
 Published.toml
 .DS_Store
 frontend/
+tsconfig.tsbuildinfo
