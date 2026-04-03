@@ -23,8 +23,11 @@ interface LockInfo {
   creator: string
 }
 
-function bytesToHex(bytes: number[]): string {
-  return '0x' + bytes.map(b => b.toString(16).padStart(2, '0')).join('')
+function bytesToId(bytes: number[]): string {
+  // BCS serializes UID as 33 bytes: [length_prefix=32, 32_bytes_of_id]
+  // Strip the first BCS length byte to get the actual 32-byte object ID
+  const actualBytes = bytes.slice(1)
+  return '0x' + actualBytes.map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 function formatDate(ms: number): string {
@@ -104,7 +107,7 @@ export default function MyLocksPage() {
         if (beneficiary.toLowerCase() !== account.address.toLowerCase()) continue
 
         const rawId = fields.lock_id
-        const lockId = Array.isArray(rawId) ? bytesToHex(rawId as number[]) : String(rawId)
+        const lockId = Array.isArray(rawId) ? bytesToId(rawId as number[]) : String(rawId)
 
         results.push({
           id: lockId,
@@ -125,7 +128,7 @@ export default function MyLocksPage() {
         if (beneficiary.toLowerCase() !== account.address.toLowerCase()) continue
 
         const rawId = fields.wallet_id
-        const walletId = Array.isArray(rawId) ? bytesToHex(rawId as number[]) : String(rawId)
+        const walletId = Array.isArray(rawId) ? bytesToId(rawId as number[]) : String(rawId)
 
         results.push({
           id: walletId,
