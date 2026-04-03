@@ -40,33 +40,68 @@ export default function CreateVestingPage() {
     if (cliffMs <= Date.now()) { setError('Cliff date must be in the future'); return }
     if (endMs <= cliffMs) { setError('End date must be after cliff date'); return }
 
-    let coins
+    let tokenCoins
     try {
-      coins = await suiClient.getCoins({ owner: account.address, coinType: tokenType })
+      tokenCoins = await suiClient.getCoins({ owner: account.address, coinType: tokenType })
     } catch {
-      setError('Failed to fetch coins. Check the token address.')
+      setError('Failed to fetch coins. Check the token address format (e.g. 0x...::module::TYPE).')
       return
     }
-    if (!coins.data.length) { setError(`No ${tokenType} tokens found in wallet.`); return }
+    if (!tokenCoins.data.length) { setError(`No ${tokenType} tokens found in wallet.`); return }
 
     const amountBase = BigInt(Math.floor(parseFloat(amount) * 1e9))
+    if (amountBase <= 0n) { setError('Amount must be greater than zero'); return }
+
+    // Validate beneficiary format
+    if (!/^0x[a-fA-F0-9]{64}$/.test(beneficiary)) {
+      setError('Invalid beneficiary address. Must be a 66-character hex address (0x + 64 hex chars).')
+      return
+    }
+
+    const isSui = tokenType === '0x2::sui::SUI'
     const tx = new Transaction()
 
-    const coinToSend = tx.splitCoins(tx.gas, [tx.pure.u64(amountBase)])
-    const feeCoin = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(PLATFORM_FEE))])
+    if (isSui) {
+      const coinToSend = tx.splitCoins(tx.gas, [tx.pure.u64(amountBase)])
+      const feeCoin = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(PLATFORM_FEE))])
 
-    tx.moveCall({
-      target: `${VESTING_PKG}::vesting_schedule::new`,
-      arguments: [
-        coinToSend,
-        feeCoin,
-        tx.object(SUI_CLOCK_OBJECT_ID),
-        tx.pure.address(beneficiary),
-        tx.pure.u64(BigInt(cliffMs)),
-        tx.pure.u64(BigInt(endMs)),
-      ],
-      typeArguments: [tokenType],
-    })
+      tx.moveCall({
+        target: `${VESTING_PKG}::vesting_schedule::new`,
+        arguments: [
+          coinToSend,
+          feeCoin,
+          tx.object(SUI_CLOCK_OBJECT_ID),
+          tx.pure.address(beneficiary),
+          tx.pure.u64(BigInt(cliffMs)),
+          tx.pure.u64(BigInt(endMs)),
+        ],
+        typeArguments: [tokenType],
+      })
+    } else {
+      // For non-SUI tokens: merge all coin objects, then split
+      const coinIds = tokenCoins.data.map(c => c.coinObjectId)
+      const primaryCoin = tx.object(coinIds[0])
+
+      if (coinIds.length > 1) {
+        tx.mergeCoins(primaryCoin, coinIds.slice(1).map(id => tx.object(id)))
+      }
+
+      const coinToSend = tx.splitCoins(primaryCoin, [tx.pure.u64(amountBase)])
+      const feeCoin = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(PLATFORM_FEE))])
+
+      tx.moveCall({
+        target: `${VESTING_PKG}::vesting_schedule::new`,
+        arguments: [
+          coinToSend,
+          feeCoin,
+          tx.object(SUI_CLOCK_OBJECT_ID),
+          tx.pure.address(beneficiary),
+          tx.pure.u64(BigInt(cliffMs)),
+          tx.pure.u64(BigInt(endMs)),
+        ],
+        typeArguments: [tokenType],
+      })
+    }
 
     signAndExecute(
       { transactionBlock: tx as any },

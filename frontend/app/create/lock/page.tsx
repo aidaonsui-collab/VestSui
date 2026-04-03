@@ -44,45 +44,81 @@ export default function CreateLockPage() {
       return
     }
 
-    // Fetch user's coins of the specified type
-    let coins
+    const amountBase = BigInt(Math.floor(parseFloat(amount) * 1e9))
+    if (amountBase <= 0n) {
+      setError('Amount must be greater than zero')
+      return
+    }
+
+    // Validate beneficiary format
+    if (!/^0x[a-fA-F0-9]{64}$/.test(beneficiary)) {
+      setError('Invalid beneficiary address. Must be a 66-character hex address (0x + 64 hex chars).')
+      return
+    }
+
+    const isSui = tokenType === '0x2::sui::SUI'
+
+    // Validate the user actually holds this token type
+    let tokenCoins
     try {
-      coins = await suiClient.getCoins({
+      tokenCoins = await suiClient.getCoins({
         owner: account.address,
         coinType: tokenType,
       })
     } catch {
-      setError('Failed to fetch your coins. Check the token address.')
+      setError('Failed to fetch your coins. Check the token address format (e.g. 0x...::module::TYPE).')
       return
     }
 
-    if (!coins.data.length) {
+    if (!tokenCoins.data.length) {
       setError(`You don't have any ${tokenType} tokens.`)
       return
     }
 
-    const amountBase = BigInt(Math.floor(parseFloat(amount) * 1e9))
-
     const tx = new Transaction()
 
-    // Split the amount from first coin (or use gas if it's the same type)
-    const coinToSend = tx.splitCoins(tx.gas, [tx.pure.u64(amountBase)])
+    if (isSui) {
+      // For SUI: split token amount + fee from gas coin
+      const coinToSend = tx.splitCoins(tx.gas, [tx.pure.u64(amountBase)])
+      const feeCoin = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(PLATFORM_FEE))])
 
-    // Get 1 SUI for fee
-    const feeCoin = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(PLATFORM_FEE))])
+      tx.moveCall({
+        target: `${VESTING_PKG}::token_locker::lock`,
+        arguments: [
+          coinToSend,
+          feeCoin,
+          tx.object(SUI_CLOCK_OBJECT_ID),
+          tx.pure.address(beneficiary),
+          tx.pure.u64(BigInt(unlockTimeMs)),
+        ],
+        typeArguments: [tokenType],
+      })
+    } else {
+      // For non-SUI tokens: merge all coin objects, then split the amount
+      const coinIds = tokenCoins.data.map(c => c.coinObjectId)
+      const primaryCoin = tx.object(coinIds[0])
 
-    // Call token_locker::lock
-    tx.moveCall({
-      target: `${VESTING_PKG}::token_locker::lock`,
-      arguments: [
-        coinToSend,       // Coin<T>
-        feeCoin,          // Coin<SUI> fee
-        tx.object(SUI_CLOCK_OBJECT_ID), // &Clock
-        tx.pure.address(beneficiary),    // beneficiary address
-        tx.pure.u64(BigInt(unlockTimeMs)), // unlock_time ms
-      ],
-      typeArguments: [tokenType],
-    })
+      if (coinIds.length > 1) {
+        tx.mergeCoins(primaryCoin, coinIds.slice(1).map(id => tx.object(id)))
+      }
+
+      const coinToSend = tx.splitCoins(primaryCoin, [tx.pure.u64(amountBase)])
+
+      // Fee is always SUI from gas
+      const feeCoin = tx.splitCoins(tx.gas, [tx.pure.u64(BigInt(PLATFORM_FEE))])
+
+      tx.moveCall({
+        target: `${VESTING_PKG}::token_locker::lock`,
+        arguments: [
+          coinToSend,
+          feeCoin,
+          tx.object(SUI_CLOCK_OBJECT_ID),
+          tx.pure.address(beneficiary),
+          tx.pure.u64(BigInt(unlockTimeMs)),
+        ],
+        typeArguments: [tokenType],
+      })
+    }
 
     signAndExecute(
       { transactionBlock: tx as any },
