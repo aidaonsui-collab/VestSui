@@ -8,7 +8,6 @@ import { SUI_CLOCK_OBJECT_ID } from '@mysten/sui/utils'
 
 const VESTING_PKG = process.env.NEXT_PUBLIC_VESTING_PKG || '0x0'
 const RPC_URL = process.env.NEXT_PUBLIC_SUI_RPC || 'https://fullnode.mainnet.sui.io'
-const SUI_COIN_TYPE = '0x2::sui::SUI'
 
 interface LockInfo {
   id: string
@@ -33,21 +32,29 @@ async function suiRPC(method: string, params: unknown[]) {
   return j.result
 }
 
-async function getCreatedObjectId(txDigest: string): Promise<string> {
+async function getCreatedSharedObjectId(txDigest: string): Promise<string> {
   const tx = await suiRPC('sui_getTransactionBlock', [
     txDigest,
-    { showEffects: true, showEvents: true },
+    { showEffects: true },
   ]) as Record<string, unknown>
   const effects = tx.effects as Record<string, unknown>
   const created = effects.created as Record<string, unknown>[]
   for (const obj of created) {
     const owner = obj.owner as Record<string, unknown>
     if (owner && 'Shared' in owner) {
-      const ref = obj.reference as Record<string, unknown>
-      return ref.objectId as string
+      return (obj.reference as Record<string, unknown>).objectId as string
     }
   }
   return ''
+}
+
+async function getObjectType(objectId: string): Promise<string> {
+  const obj = await suiRPC('sui_getObject', [
+    objectId,
+    { showType: true },
+  ]) as Record<string, unknown>
+  const data = obj.data as Record<string, unknown>
+  return data.type as string
 }
 
 async function queryEvents(eventType: string, module: string) {
@@ -64,6 +71,12 @@ async function queryEvents(eventType: string, module: string) {
   })
   const j = await res.json() as { result?: { data?: unknown[] } }
   return j.result?.data || []
+}
+
+function extractCoinType(typeStr: string): string {
+  // e.g. "0x...::aida::AIDA" from "0xpkg::token_locker::TokenLock<0x...::aida::AIDA>"
+  const match = typeStr.match(/<(.+)>$/)
+  return match ? match[1] : '0x2::sui::SUI'
 }
 
 function formatDate(ms: number): string {
@@ -113,7 +126,7 @@ export default function MyLocksPage() {
 
       const results: LockInfo[] = []
 
-      // Process token locks — fetch object ID from the transaction that created it
+      // Process token locks
       for (const evt of lockEvents as Record<string, unknown>[]) {
         const fields = evt.parsedJson as Record<string, unknown> | undefined
         if (!fields) continue
@@ -122,13 +135,16 @@ export default function MyLocksPage() {
 
         const evtId = evt.id as Record<string, unknown>
         const txDigest = evtId.txDigest as string
-        const lockId = await getCreatedObjectId(txDigest)
+        const lockId = await getCreatedSharedObjectId(txDigest)
         if (!lockId) continue
+
+        // Fetch the actual object to get the correct token type (phantom type)
+        const tokenType = await getObjectType(lockId).then(extractCoinType)
 
         results.push({
           id: lockId,
           type: 'lock',
-          tokenType: SUI_COIN_TYPE,
+          tokenType,
           balance: fields.amount as string,
           beneficiary,
           unlockTime: fields.unlock_time as number,
@@ -145,13 +161,15 @@ export default function MyLocksPage() {
 
         const evtId = evt.id as Record<string, unknown>
         const txDigest = evtId.txDigest as string
-        const walletId = await getCreatedObjectId(txDigest)
+        const walletId = await getCreatedSharedObjectId(txDigest)
         if (!walletId) continue
+
+        const tokenType = await getObjectType(walletId).then(extractCoinType)
 
         results.push({
           id: walletId,
           type: 'vesting',
-          tokenType: SUI_COIN_TYPE,
+          tokenType,
           balance: fields.total_amount as string,
           beneficiary,
           cliffTime: fields.cliff_time as number,
@@ -257,7 +275,7 @@ export default function MyLocksPage() {
                       <span className="text-xs font-medium px-2 py-0.5 rounded bg-[#D4AF37]/10 text-[#D4AF37]">
                         {lock.type === 'lock' ? 'Token Lock' : 'Vesting'}
                       </span>
-                      <span className="text-xs text-muted-foreground font-mono ml-auto">{lock.id.slice(0, 10)}...</span>
+                      <span className="text-xs text-muted-foreground font-mono ml-auto">{lock.tokenType.slice(0, 12)}...</span>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
