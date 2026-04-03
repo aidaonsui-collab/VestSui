@@ -3,9 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from '@mysten/dapp-kit'
 import { Lock, TrendingUp, Clock, Coins, AlertCircle, Loader2, CheckCircle, ExternalLink } from 'lucide-react'
-import { Transaction, Argument } from '@mysten/sui/transactions'
+import { Transaction } from '@mysten/sui/transactions'
 import { SUI_CLOCK_OBJECT_ID } from '@mysten/sui/utils'
-import { fromB64 } from '@mysten/sui/utils'
 
 const VESTING_PKG = process.env.NEXT_PUBLIC_VESTING_PKG || '0x0'
 const RPC_URL = process.env.NEXT_PUBLIC_SUI_RPC || 'https://fullnode.mainnet.sui.io'
