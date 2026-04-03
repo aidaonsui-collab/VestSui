@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useCurrentAccount, useSuiClient, useSignAndExecuteTransactionBlock } from '@mysten/dapp-kit'
+import { useCurrentAccount, useSignAndExecuteTransactionBlock } from '@mysten/dapp-kit'
 import { Lock, TrendingUp, Clock, Coins, AlertCircle, Loader2, CheckCircle, ExternalLink } from 'lucide-react'
 import { Transaction } from '@mysten/sui/transactions'
 import { SUI_CLOCK_OBJECT_ID } from '@mysten/sui/utils'
@@ -23,11 +23,47 @@ interface LockInfo {
   creator: string
 }
 
-function bytesToId(bytes: number[]): string {
-  // BCS serializes UID as 33 bytes: [length_prefix=32, 32_bytes_of_id]
-  // Strip the first BCS length byte to get the actual 32-byte object ID
-  const actualBytes = bytes.slice(1)
-  return '0x' + actualBytes.map(b => b.toString(16).padStart(2, '0')).join('')
+async function suiRPC(method: string, params: unknown[]) {
+  const res = await fetch(RPC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  })
+  const j = await res.json() as { result?: unknown }
+  return j.result
+}
+
+async function getCreatedObjectId(txDigest: string): Promise<string> {
+  const tx = await suiRPC('sui_getTransactionBlock', [
+    txDigest,
+    { showEffects: true, showEvents: true },
+  ]) as Record<string, unknown>
+  const effects = tx.effects as Record<string, unknown>
+  const created = effects.created as Record<string, unknown>[]
+  for (const obj of created) {
+    const owner = obj.owner as Record<string, unknown>
+    if (owner && 'Shared' in owner) {
+      const ref = obj.reference as Record<string, unknown>
+      return ref.objectId as string
+    }
+  }
+  return ''
+}
+
+async function queryEvents(eventType: string, module: string) {
+  const fullEvent = `${VESTING_PKG}::${module}::${eventType}`
+  const res = await fetch(RPC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'suix_queryEvents',
+      params: [{ MoveEventType: fullEvent }, null, 50, true],
+    }),
+  })
+  const j = await res.json() as { result?: { data?: unknown[] } }
+  return j.result?.data || []
 }
 
 function formatDate(ms: number): string {
@@ -51,30 +87,8 @@ function formatAmount(raw: string, decimals = 9): string {
   return val.toFixed(2)
 }
 
-async function queryEvents(eventType: string, module: string) {
-  const fullEvent = `${VESTING_PKG}::${module}::${eventType}`
-  const res = await fetch(RPC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'suix_queryEvents',
-      params: [
-        { MoveEventType: fullEvent },
-        null,
-        50,
-        true,
-      ],
-    }),
-  })
-  const j = await res.json() as { result?: { data?: unknown[] } }
-  return j.result?.data || []
-}
-
 export default function MyLocksPage() {
   const account = useCurrentAccount()
-  const suiClient = useSuiClient()
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock()
 
   const [locks, setLocks] = useState<LockInfo[]>([])
@@ -99,15 +113,17 @@ export default function MyLocksPage() {
 
       const results: LockInfo[] = []
 
-      // Parse token lock events
+      // Process token locks — fetch object ID from the transaction that created it
       for (const evt of lockEvents as Record<string, unknown>[]) {
         const fields = evt.parsedJson as Record<string, unknown> | undefined
         if (!fields) continue
         const beneficiary = fields.beneficiary as string
         if (beneficiary.toLowerCase() !== account.address.toLowerCase()) continue
 
-        const rawId = fields.lock_id
-        const lockId = Array.isArray(rawId) ? bytesToId(rawId as number[]) : String(rawId)
+        const evtId = evt.id as Record<string, unknown>
+        const txDigest = evtId.txDigest as string
+        const lockId = await getCreatedObjectId(txDigest)
+        if (!lockId) continue
 
         results.push({
           id: lockId,
@@ -120,15 +136,17 @@ export default function MyLocksPage() {
         })
       }
 
-      // Parse vesting events
+      // Process vesting wallets
       for (const evt of vestingEvents as Record<string, unknown>[]) {
         const fields = evt.parsedJson as Record<string, unknown> | undefined
         if (!fields) continue
         const beneficiary = fields.beneficiary as string
         if (beneficiary.toLowerCase() !== account.address.toLowerCase()) continue
 
-        const rawId = fields.wallet_id
-        const walletId = Array.isArray(rawId) ? bytesToId(rawId as number[]) : String(rawId)
+        const evtId = evt.id as Record<string, unknown>
+        const txDigest = evtId.txDigest as string
+        const walletId = await getCreatedObjectId(txDigest)
+        if (!walletId) continue
 
         results.push({
           id: walletId,
@@ -239,6 +257,7 @@ export default function MyLocksPage() {
                       <span className="text-xs font-medium px-2 py-0.5 rounded bg-[#D4AF37]/10 text-[#D4AF37]">
                         {lock.type === 'lock' ? 'Token Lock' : 'Vesting'}
                       </span>
+                      <span className="text-xs text-muted-foreground font-mono ml-auto">{lock.id.slice(0, 10)}...</span>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
